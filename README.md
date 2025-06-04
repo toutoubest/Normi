@@ -11,7 +11,7 @@ I added several funcs here: cal_mi2_divergence, compute_optimal_lag, cal_mi_dive
 # run_normi_divergence,py: 
 this is the example code 
 
-# many csvs: 
+# Some divergence output folder: 
 rankedEdges_TimeLag_dist*.csv  or Divergence_Results_TimeLag_Summary.csv are some auc output of the different divergences. 
 
 
