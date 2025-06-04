@@ -9,7 +9,7 @@ I added several funcs here: cal_mi2_divergence, compute_optimal_lag, cal_mi_dive
 this is the example code 
 
 #many csvs: 
-ranked_Edges_distance*.csv are some auc output of the different divergences. 
+rankedEdges_TimeLag_dist*.csv are some auc output of the different divergences. 
 
 
 
