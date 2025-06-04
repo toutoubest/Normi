@@ -14,7 +14,6 @@ this is the example code
 # many csvs: 
 rankedEdges_TimeLag_dist*.csv  or Divergence_Results_TimeLag_Summary.csv are some auc output of the different divergences. 
 
-# ExpressionData.csv, PseudoTime.csv, refNetwork.csv ae the Normi paper original data files. 
 
 
 
