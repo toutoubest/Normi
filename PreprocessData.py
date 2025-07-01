@@ -1,4 +1,3 @@
-# -*- coding:utf-8 -*-
 import pandas as pd
 import numpy as np 
 import pandas as pd
@@ -69,7 +68,7 @@ def smooth(df_p, df_e, slipe, k=5):
         count.append(len(df_e_new))
     return count, df_e_all
 
-#new code to add many divergences:
+#############new code:
 
 def compute_f_divergence(p1, p2, divergence_type="kullback-leibler"):
     kde_p1 = gaussian_kde(p1)
@@ -96,53 +95,75 @@ def compute_f_divergence(p1, p2, divergence_type="kullback-leibler"):
     else:
         raise ValueError("Unknown divergence type")
 
-def smooth_divergence(df_pse, df_exp, slide=1, k=5, distance=7):  # distance=7 example = symmetric KL
+def smooth_divergence(df_pse, df_exp, slide=1, k=5, distance=7):  # example: distance=7 = symmetric KL
     df_exp_smooth = pd.DataFrame(columns=df_exp.columns)
     count = []
-    
-    pseudo_time = df_pse.values.flatten()
-    order = np.argsort(pseudo_time)
-    df_exp_sorted = df_exp.iloc[order, :].reset_index(drop=True)
-    
-    N = len(df_exp_sorted)
-    num_windows = (N - k) // slide + 1
-    
-    for i in range(num_windows):
-        start = i * slide
-        end = start + k
-        if end + 1 > N:
-            break
-        
-        data_t = df_exp_sorted.iloc[start:end, :]
-        data_t1 = df_exp_sorted.iloc[start+1:end+1, :]
-        
-        row_values = {}
-        for gene in df_exp.columns:
-            p1 = data_t[gene].values
-            p2 = data_t1[gene].values
+
+    for i in range(len(df_pse.columns)):
+        # Extract one pseudotime column (one state/branch)
+        df_p_c = df_pse.iloc[:, i:(i + 1)].dropna()
+        df_p_c.columns = ['pseudotime']
+        df_p_c.sort_values(by='pseudotime', ascending=True, inplace=True)
+
+        # Merge with expression data — safe and aligned
+        df_p_e = pd.merge(df_p_c, df_exp, left_index=True, right_index=True)
+        df_exp_sorted = df_p_e.iloc[:, 1:].reset_index(drop=True)
+
+        N = len(df_exp_sorted)
+        num_windows = (N - k) // slide + 1
+
+        for j in range(num_windows):
+            start = j * slide
+            end = start + k
+            if end + 1 > N:
+                break
+
+            data_t = df_exp_sorted.iloc[start:end, :]
+            data_t1 = df_exp_sorted.iloc[start + 1:end + 1, :]
+
+            row_values = {}
+            for gene in df_exp.columns:
+                p1 = data_t[gene].values
+                p2 = data_t1[gene].values
+                mean_diff = abs(p1.mean() - p2.mean())  # ← Normi-style mean diff
             
-            if distance == 1:  # KS distance
-                ks_stat = ks_2samp(p1, p2).statistic
-                row_values[gene] = ks_stat
-            elif distance == 5:  # KL(P||Q) forward KL
-                kl_pq = compute_f_divergence(p1, p2, "kullback-leibler")
-                row_values[gene] = kl_pq
-            elif distance == 6:  # KL(Q||P) reverse KL
-                kl_qp = compute_f_divergence(p2, p1, "kullback-leibler")
-                row_values[gene] = kl_qp
-            elif distance == 7:  # Symmetric KL
-                kl_pq = compute_f_divergence(p1, p2, "kullback-leibler")
-                kl_qp = compute_f_divergence(p2, p1, "kullback-leibler")
-                row_values[gene] = 0.5 * (kl_pq + kl_qp)
-            elif distance == 8:  # Jesen-shannon divergence(JS divergence)
-                js = compute_f_divergence(p1, p2, "jensen-shannon")
-                row_values[gene] = js
-            # Add elif distance == 9 ... 12 here if we want implement Pearson, Neyman, etc
-            else:
-                raise ValueError("Unsupported distance type!")
-        
-        df_exp_smooth = pd.concat([df_exp_smooth, pd.DataFrame(row_values, index=[0])], ignore_index=True)
-        count.append(k)
-    
+                if distance == 1:  # KS
+                    div = ks_2samp(p1, p2).statistic
+                    row_values[gene] = div
+                elif distance == 5:  # KL(P||Q)
+                    div = compute_f_divergence(p1, p2, "kullback-leibler")
+                    row_values[gene] = div
+                elif distance == 6:  # KL(Q||P)
+                    div = compute_f_divergence(p2, p1, "kullback-leibler")
+                    row_values[gene] = div
+                elif distance == 7:  # Symmetric KL
+                    kl_pq = compute_f_divergence(p1, p2, "kullback-leibler")
+                    kl_qp = compute_f_divergence(p2, p1, "kullback-leibler")
+                    div = 0.5 * (kl_pq + kl_qp)
+                    row_values[gene] = div
+                elif distance == 8:  # JS divergence
+                    div = compute_f_divergence(p1, p2, "jensen-shannon")
+                    row_values[gene] = div
+                else:
+                    raise ValueError("Unsupported distance type!")
+            
+                #use multi feature score(mean+divergence):
+                #alpha = 0.5  # control blend between mean and divergence
+                #score = alpha * mean_diff + (1 - alpha) * div
+                #row_values[gene] = score
+                row_values[gene] = div  # use divergence only
+
+            # Append smoothed row
+            df_exp_smooth = pd.concat([df_exp_smooth, pd.DataFrame(row_values, index=[0])], ignore_index=True)
+            #count.append(k)
+            count.append(num_windows)
+
     return count, df_exp_smooth
+
+
+
+
+
+
+
 
