@@ -69,6 +69,7 @@ def cal_mi(i, j, x, y, count):
 
     Output: a dict with keys ['Gene1', 'Gene2']
     '''
+    '''
     maxDelay = floor(min(count)/3)
     dc = []
     
@@ -94,7 +95,9 @@ def cal_mi(i, j, x, y, count):
         dc.append(d)
     dc = np.array(dc)
     MAXD = np.argmax(dc)  
-
+    '''
+    MAXD = 1  # Fixed lag = 1
+    
     sums = 0
     # Xt_L:Xt-2, Xt-1, Xt
     # Yt_L:Yt-2, Yt-1, Yt
