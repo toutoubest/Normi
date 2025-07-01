@@ -200,8 +200,9 @@ def cal_mi_divergence(i, j, x, y):
     x, y are divergence profiles.
     """
     # 1️⃣ Find optimal lag
-    opt_lag = compute_optimal_lag(x, y)
-    
+    #opt_lag = compute_optimal_lag(x, y)
+    opt_lag = 1  # fixed time lag = 1
+
     # 2️⃣ Align time series
     if opt_lag == 0:
         x_aligned = x
@@ -222,4 +223,6 @@ def cal_mi_divergence(i, j, x, y):
     #return {'Gene1': i, 'Gene2': j, 'score': mi}
     d = dcor.distance_correlation(x_aligned, y_aligned)
     return {'Gene1': i, 'Gene2': j, 'score': d}
+
+
 
