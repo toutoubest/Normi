@@ -1,7 +1,10 @@
+#important packages:
+#pip install pandas numpy scipy matplotlib tqdm dcor pqdm scikit-learn(terminal)
 import pandas as pd
 from PreprocessData import smooth_divergence
 from EstimateMI import cal_mi2_divergence as cal_mutual_information
-from mRMR import MRMR2
+#from mRMR import MRMR2
+from mRMR import MRMR2_divergence
 from Evaluate import concat_ref, cal_auc_aupr
 
 # Load data
@@ -27,7 +30,8 @@ for distance in distance_list:
     df_mi.sort_values(by="score", ascending=False, inplace=True)
 
     # STEP 3: Filter redundant edges using mRMR
-    df_mrmr = MRMR2(df_mi, n_jobs=1)
+    #df_mrmr = MRMR2(df_mi, n_jobs=1)
+    df_mrmr = MRMR2_divergence(df_mi, n_jobs=1)
     df_mrmr = df_mrmr[df_mrmr.score > 0]
     df_mrmr.sort_values(by="score", ascending=False, inplace=True)
 
@@ -46,5 +50,5 @@ for distance in distance_list:
 
 # Save summary table
 df_summary = pd.DataFrame(results)
-df_summary.to_csv("Divergence_Results_TimeLag=1_Summary.csv", index=False)
-print("\n=== All done! Summary saved to Divergence_Results_TimeLag=1_Summary.csv ===")
+df_summary.to_csv("Divergence_Results_TimeLag=1_mrmrD_Summary.csv", index=False)
+print("\n=== All done! Summary saved to Divergence_Results_TimeLag=1_mrmrD_Summary.csv ===")
