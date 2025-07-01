@@ -64,3 +64,44 @@ def MRMR2(data, n_jobs=1):
             print(type(result[i]))
     return df_res
 
+
+def MRMR2_divergence(df_mi, n_jobs=1):
+    """
+    Modified mRMR using divergence scores instead of mutual information.
+    This implements:  D*(X;Z) = D(X,Z) - (1/|S|) * sum_{Y in S} D(X,Y)
+    """
+    df_res = pd.DataFrame(columns=df_mi.columns)
+    target = list(df_mi.Gene2.drop_duplicates())
+
+    for gene_z in target:
+        df_gene = df_mi[df_mi.Gene2 == gene_z]
+        df_gene = df_gene[df_gene.Gene1 != gene_z]
+        if df_gene.empty:
+            continue
+
+        S = []  # selected TFs
+        U = df_gene.sort_values(by='score', ascending=False).Gene1.tolist()
+        scores = df_gene.set_index('Gene1')['score'].to_dict()
+
+        while len(U) > 0:
+            best_score = -float('inf')
+            best_gene = None
+            for gene_x in U:
+                div_xz = scores.get(gene_x, 0)
+                if len(S) == 0:
+                    score = div_xz
+                else:
+                    redun = [df_mi[(df_mi.Gene1 == gene_x) & (df_mi.Gene2 == gene_y)]['score'].values[0]
+                             for gene_y in S if not df_mi[(df_mi.Gene1 == gene_x) & (df_mi.Gene2 == gene_y)].empty]
+                    score = div_xz - sum(redun) / len(S) if redun else div_xz
+                if score > best_score:
+                    best_score = score
+                    best_gene = gene_x
+            if best_gene is None:
+                break
+            S.append(best_gene)
+            df_res = pd.concat([df_res, pd.DataFrame([[best_gene, gene_z, scores[best_gene]]],
+                                                     columns=['Gene1', 'Gene2', 'score'])])
+            U.remove(best_gene)
+
+    return df_res
