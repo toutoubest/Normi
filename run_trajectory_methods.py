@@ -5,18 +5,19 @@ Created on Wed Jul  2 14:28:04 2025
 
 @author: linglingzhang
 """
-# Replace the Slingshot and get pseu time csvs:
+# Replace the Slingshot
 import pandas as pd
 import scanpy as sc
 import phate
 import matplotlib.pyplot as plt
+from EstimateMI import compute_divergence_average_3lags
 
 # Load Data 
 df_exp = pd.read_csv("input/ExpressionData.csv", index_col=0)
 adata = sc.AnnData(df_exp)
 adata.var_names_make_unique()
 
-#  PHATE 
+#  PHATE
 print("=== Running PHATE ===")
 phate_operator = phate.PHATE(n_components=2)
 adata.obsm["X_phate"] = phate_operator.fit_transform(adata.X)
@@ -32,9 +33,9 @@ df_phate = pd.DataFrame({
     "cell_id": adata.obs_names,
     "Pseudotime": adata.obs["phate_pseudotime"].values
 })
-df_phate.to_csv("phate_pseudotime.csv", index=False)
+df_phate.to_csv("phate_pseudotime_timlag=1.csv", index=False)
 
-# Diffusion Maps 
+#  Diffusion Maps 
 print("=== Running Diffusion Maps ===")
 sc.pp.normalize_total(adata)
 sc.pp.log1p(adata)
@@ -49,10 +50,10 @@ df_diff = pd.DataFrame({
     "cell_id": adata.obs_names,
     "Pseudotime": adata.obs["dpt_pseudotime"].values
 })
-df_diff.to_csv("diffmap_pseudotime.csv", index=False)
+df_diff.to_csv("diffmap_pseudotime_timlag=1.csv", index=False)
 print("Saved: diffmap_pseudotime.csv")
 
-# PCA-based Pseudotime 
+# PCA-based Pseudotime
 print("=== Running PCA-based Pseudotime ===")
 pc1 = adata.obsm["X_pca"][:, 0]
 pc1_minmax = (pc1 - pc1.min()) / (pc1.max() - pc1.min())
@@ -63,10 +64,10 @@ df_pca = pd.DataFrame({
     "cell_id": adata.obs_names,
     "Pseudotime": adata.obs["pca_pseudotime"].values
 })
-df_pca.to_csv("pca_pseudotime.csv", index=False)
+df_pca.to_csv("pca_pseudotime_timlag=1.csv", index=False)
 print("Saved: pca_pseudotime.csv")
 
-# PAGA 
+# PAGA
 print("=== Running PAGA ===")
 sc.pp.pca(adata)
 sc.pp.neighbors(adata)
@@ -81,7 +82,7 @@ df_paga = pd.DataFrame({
     "cell_id": adata.obs_names,
     "Pseudotime": adata.obs["dpt_pseudotime"].values
 })
-df_paga.to_csv("paga_pseudotime.csv", index=False)
+df_paga.to_csv("paga_pseudotime_timlag=1.csv", index=False)
 print("Saved: paga_pseudotime.csv")
 
 ###############################################
@@ -98,14 +99,15 @@ df_ref = pd.read_csv("input/refNetwork.csv", usecols=['Gene1', 'Gene2'])
 
 # Define pseudotime CSVs (from 4 methods)
 pseudotime_files = {
-    "phate": "phate_pseudotime.csv",
-    "diffmap": "diffmap_pseudotime.csv",
-    "pca": "pca_pseudotime.csv",
-    "paga": "paga_pseudotime.csv"
+    "phate": "phate_pseudotime_timlag=1.csv",
+    "diffmap": "diffmap_pseudotime_timlag=1.csv",
+    "pca": "pca_pseudotime_timlag=1.csv",
+    "paga": "paga_pseudotime_timlag=1.csv"
 }
 
+
 # Distances to test
-distance_list = [1, 5, 6, 7, 8]
+distance_list = [1, 5, 6, 7, 8, 9, 10, 11]
 
 # Save results
 all_results = []
@@ -116,9 +118,11 @@ for method_name, pseudo_file in pseudotime_files.items():
 
     method_results = []
     for distance in distance_list:
-        print(f" Normi (Time Lag=1) with {method_name} pseudotime and divergence distance={distance} ")
+        print(f"--- Normi (best Time Lag) with {method_name} pseudotime and divergence distance={distance} ---")
         num_windows, df_exp_smooth = smooth_divergence(df_pse, df_exp, slide=1, k=5, distance=distance)
         df_mi = cal_mutual_information(df_exp_smooth, n_jobs=1)
+        
+            
         df_mi = df_mi[df_mi.score > 0].sort_values(by="score", ascending=False)
         df_mrmr = MRMR2_divergence(df_mi, n_jobs=1)
         df_mrmr = df_mrmr[df_mrmr.score > 0].sort_values(by="score", ascending=False)
@@ -138,5 +142,6 @@ for method_name, pseudo_file in pseudotime_files.items():
 
 # Save final summary
 df_all = pd.DataFrame(all_results)
-df_all.to_csv("Divergence_AllMethods_Summary.csv", index=False)
-print("\n==Finished! Summary saved to 'Divergence_AllMethods_Summary.csv' ==")
+df_all.to_csv("Divergence_AllMethods_Summary_besttimelag_timlag=1.csv", index=False)
+print("\n Finished! Summary saved to 'Divergence_AllMethods_Summary_timlag=1.csv' ")
+
