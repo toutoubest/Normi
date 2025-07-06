@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np 
 import pandas as pd
-from scipy.stats import gaussian_kde, ks_2samp, entropy
+from scipy.stats import gaussian_kde, ks_2samp, entropy, wasserstein_distance, energy_distance
 
 def write_file(filePath, text):
     file = open(filePath, 'w')
@@ -68,7 +68,7 @@ def smooth(df_p, df_e, slipe, k=5):
         count.append(len(df_e_new))
     return count, df_e_all
 
-#############new code:
+#############new funcs:
 
 def compute_f_divergence(p1, p2, divergence_type="kullback-leibler"):
     kde_p1 = gaussian_kde(p1)
@@ -129,23 +129,47 @@ def smooth_divergence(df_pse, df_exp, slide=1, k=5, distance=7):  # example: dis
             
                 if distance == 1:  # KS
                     div = ks_2samp(p1, p2).statistic
-                    row_values[gene] = div
-                elif distance == 5:  # KL(P||Q)
+                    
+                elif distance == 5:  # forward KL
                     div = compute_f_divergence(p1, p2, "kullback-leibler")
-                    row_values[gene] = div
-                elif distance == 6:  # KL(Q||P)
+                    
+                elif distance == 6:  # backward KL
                     div = compute_f_divergence(p2, p1, "kullback-leibler")
-                    row_values[gene] = div
+                    
                 elif distance == 7:  # Symmetric KL
                     kl_pq = compute_f_divergence(p1, p2, "kullback-leibler")
                     kl_qp = compute_f_divergence(p2, p1, "kullback-leibler")
                     div = 0.5 * (kl_pq + kl_qp)
-                    row_values[gene] = div
+                    
                 elif distance == 8:  # JS divergence
                     div = compute_f_divergence(p1, p2, "jensen-shannon")
+                    
+                
+
+                elif distance == 9:  # Wasserstein distance
+                    div = wasserstein_distance(p1, p2)
+                    
+
+                elif distance == 10:  # Energy distance
+                    try:
+                        div = energy_distance(p1, p2)
+                    except:
+                        div = 0.0  # fallback in case of error
                     row_values[gene] = div
+                
+                elif distance == 11:  # Cramér distance (approximate)
+                    x_sorted = np.sort(p1)
+                    y_sorted = np.sort(p2)
+                    min_len = min(len(x_sorted), len(y_sorted))
+                    if min_len == 0:
+                        div = 0.0
+                    else:
+                        div = np.linalg.norm(x_sorted[:min_len] - y_sorted[:min_len])
+                    
+                
                 else:
                     raise ValueError("Unsupported distance type!")
+
             
                 #use multi feature score(mean+divergence):
                 #alpha = 0.5  # control blend between mean and divergence
