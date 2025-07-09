@@ -17,12 +17,12 @@ os.makedirs("outputtimelag=1", exist_ok=True)
 
 
 
-# ---------- Load Data ----------
+# Load Data 
 df_exp = pd.read_csv("input/ExpressionData.csv", index_col=0)
 adata = sc.AnnData(df_exp)
 adata.var_names_make_unique()
 
-# ---------- PHATE ----------
+#  PHATE 
 print("=== Running PHATE ===")
 phate_operator = phate.PHATE(n_components=2)
 adata.obsm["X_phate"] = phate_operator.fit_transform(adata.X)
@@ -40,7 +40,7 @@ df_phate = pd.DataFrame({
 })
 df_phate.to_csv("phate_pseudotime_timlag=1.csv", index=False)
 
-# ---------- Diffusion Maps ----------
+#  Diffusion Maps 
 print("=== Running Diffusion Maps ===")
 sc.pp.normalize_total(adata)
 sc.pp.log1p(adata)
@@ -58,7 +58,7 @@ df_diff = pd.DataFrame({
 df_diff.to_csv("diffmap_pseudotime_timlag=1.csv", index=False)
 print("Saved: diffmap_pseudotime.csv")
 
-# ---------- PCA-based Pseudotime ----------
+#  PCA-based Pseudotime 
 print("=== Running PCA-based Pseudotime ===")
 pc1 = adata.obsm["X_pca"][:, 0]
 pc1_minmax = (pc1 - pc1.min()) / (pc1.max() - pc1.min())
@@ -72,7 +72,7 @@ df_pca = pd.DataFrame({
 df_pca.to_csv("pca_pseudotime_timlag=1.csv", index=False)
 print("Saved: pca_pseudotime.csv")
 
-# ---------- PAGA ----------
+# PAGA 
 print("=== Running PAGA ===")
 sc.pp.pca(adata)
 sc.pp.neighbors(adata)
