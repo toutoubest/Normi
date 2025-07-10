@@ -65,66 +65,79 @@ def cal_EPR(df, k, sparsity):
 
 
 
-def add_sign_from_score_and_plot(df_edge, top_k=None, plot=True, output_pdf=None):
+def add_sign_and_plot(df_edge, expression_file, top_k=None, plot=True, output_pdf=None):
     '''
-    Assign sign (activation/inhibition) directly from the score (if signed),
-    then visualize/save the gene regulatory network.
+    Add activation/inhibition labels to edges using partial correlation,
+    based only on genes involved in MI-ranked edges.
 
     Parameters:
+    -----------
     df_edge : pd.DataFrame
         DataFrame with ['Gene1', 'Gene2', 'score'].
+    expression_file : str
+        Path to expression CSV file (cells × genes).
     top_k : int or None
-        Number of top edges to retain.
+        Top number of edges to keep.
     plot : bool
-        Whether to display plot.
+        Whether to plot network.
     output_pdf : str or None
-        If provided, saves figure to path as PDF.
+        Path to save PDF.
 
     Returns:
-   
-    df_edge : pd.DataFrame
-        Same DataFrame with added 'sign' column.
+    --------
+    df_edge : pd.DataFrame with 'sign' column.
     '''
 
-    # Select top_k edges if given
+    # Load expression data
+    df_exp_full = pd.read_csv(expression_file, index_col=0)
+
+    # Keep top_k edges
     df_edge = df_edge.sort_values(by='score', ascending=False)
     if top_k is not None:
         df_edge = df_edge.iloc[:top_k]
 
-    # Assign sign based on score
-    # If MI/divergence is always >= 0, this will default to 'activation'
-    signs = ['activation' if s >= 0 else 'inhibition' for s in df_edge['score']]
+    # Get unique genes in selected edges
+    selected_genes = sorted(set(df_edge['Gene1']).union(df_edge['Gene2']))
+
+    # Subset expression data
+    df_exp = df_exp_full[selected_genes]
+    X = df_exp.values
+    gene_to_idx = {g: i for i, g in enumerate(df_exp.columns)}
+
+    # Compute partial correlation using only selected genes
+    model = GraphicalLassoCV().fit(X)
+    precision = model.precision_
+    d = np.sqrt(np.diag(precision))
+    partial_corr = -precision / np.outer(d, d)
+    np.fill_diagonal(partial_corr, 1.0)
+
+    # Add activation/inhibition sign
+    signs = []
+    for _, row in df_edge.iterrows():
+        i, j = gene_to_idx[row['Gene1']], gene_to_idx[row['Gene2']]
+        corr = partial_corr[i, j]
+        signs.append('activation' if corr > 0 else 'inhibition')
     df_edge['sign'] = signs
 
-    # Build network graph
+    # Plot
     if plot or output_pdf:
         G = nx.DiGraph()
         for _, row in df_edge.iterrows():
-            color = 'black' if row['sign'] == 'activation' else 'red'
             style = 'solid' if row['sign'] == 'activation' else 'dashed'
-            G.add_edge(row['Gene1'], row['Gene2'], color=color, style=style)
+            color = 'black' if row['sign'] == 'activation' else 'red'
+            G.add_edge(row['Gene1'], row['Gene2'], style=style, color=color)
 
         pos = nx.circular_layout(G)
-
         plt.figure(figsize=(8, 8))
-
-        # Draw nodes
-        nx.draw_networkx_nodes(G, pos, node_color='deepskyblue', node_size=600)
+        nx.draw_networkx_nodes(G, pos, node_size=600)
         nx.draw_networkx_labels(G, pos, font_size=9)
 
-        # Draw edges
         solid_edges = [(u, v) for u, v in G.edges if G[u][v]['style'] == 'solid']
         dashed_edges = [(u, v) for u, v in G.edges if G[u][v]['style'] == 'dashed']
+        nx.draw_networkx_edges(G, pos, edgelist=solid_edges, edge_color='black', arrows=True, arrowsize=15)
+        nx.draw_networkx_edges(G, pos, edgelist=dashed_edges, edge_color='red', style='dashed', arrows=True, arrowsize=15)
 
-        nx.draw_networkx_edges(G, pos, edgelist=solid_edges,
-                               edge_color='black', style='solid',
-                               arrows=True, arrowsize=15)
-        nx.draw_networkx_edges(G, pos, edgelist=dashed_edges,
-                               edge_color='red', style='dashed',
-                               arrows=True, arrowsize=15)
-
-        plt.title("MI-Based Gene Network (Activation/Inhibition)")
-
+        plt.title("Gene Regulatory Network with Activation/Inhibition")
         if output_pdf:
             plt.savefig(output_pdf, format='pdf', bbox_inches='tight')
             print(f"Saved network plot to {output_pdf}")
