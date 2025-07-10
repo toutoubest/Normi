@@ -11,7 +11,7 @@ import scanpy as sc
 import phate
 import matplotlib.pyplot as plt
 from EstimateMI import compute_divergence_average_3lags
-from Evaluate import add_sign_and_plot
+from Evaluate import add_sign_from_score_and_plot
 import os
 os.makedirs("outputtimelag=1", exist_ok=True)
 
