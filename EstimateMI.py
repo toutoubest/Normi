@@ -7,6 +7,7 @@ from pqdm.processes import pqdm
 import dcor
 from scipy.special import digamma
 from math import log, floor
+from scipy.stats import entropy
 
 
 def MI_Gao(x,y,k=5):
@@ -95,9 +96,9 @@ def cal_mi(i, j, x, y, count):
         dc.append(d)
     dc = np.array(dc)
     MAXD = np.argmax(dc)  
-    '''
+'''
     MAXD = 1  # Fixed lag = 1
-    
+
     sums = 0
     # Xt_L:Xt-2, Xt-1, Xt
     # Yt_L:Yt-2, Yt-1, Yt
@@ -147,10 +148,8 @@ def cal_mi2(data, count, n_jobs=1, TF_set=[]):
     df_res = pd.DataFrame.from_dict(result)
     return df_res  
 
-# ======== Simple MI for divergence smoothing ========
-
-
 def cal_mi2_divergence(data, n_jobs=1, TF_set=[]):
+
     print(f'---------- data.shape= {data.shape}')
     if len(TF_set) == 0:
         gene_combs = list(permutations(data.columns.values, 2))
@@ -162,8 +161,7 @@ def cal_mi2_divergence(data, n_jobs=1, TF_set=[]):
     result = pqdm(params, cal_mi_divergence, n_jobs=n_jobs, argument_type='args', desc='Computations of MI (divergence)')
     df_res = pd.DataFrame.from_dict(result)
     return df_res
-
-import dcor
+     
 
 def compute_optimal_lag(x, y, max_lag=None):
     """
@@ -224,5 +222,63 @@ def cal_mi_divergence(i, j, x, y):
     d = dcor.distance_correlation(x_aligned, y_aligned)
     return {'Gene1': i, 'Gene2': j, 'score': d}
 
+#replace the MI with forward KL divergence
+def kl_divergence(p, q):
+    """Compute KL(P||Q) between empirical distributions of two genes."""
+    # Smooth to avoid zeros (critical for scRNA-seq)
+    p_smoothed = (p + 1e-10) / (np.sum(p) + 1e-10)
+    q_smoothed = (q + 1e-10) / (np.sum(q) + 1e-10)
+    return entropy(p_smoothed, q_smoothed)
 
+def cal_mi_kl(i, j, x, y, count):
+    """Compute KL(X_{t-1} || Y_t) for fixed lag=1."""
+    x_aligned = x[:-1]  # X at t-1
+    y_aligned = y[1:]   # Y at t
+    kl = kl_divergence(x_aligned, y_aligned)
+    return {'Gene1': i, 'Gene2': j, 'score': kl}
+
+#replace MI with symmetric KL:
+def symmetric_kl_divergence(p, q):
+    """Compute symmetric KL divergence: D_KL(P||Q) + D_KL(Q||P)"""
+    p_smoothed = (p + 1e-10) / (np.sum(p) + 1e-10)
+    q_smoothed = (q + 1e-10) / (np.sum(q) + 1e-10)
+
+    kl_pq = entropy(p_smoothed, q_smoothed)
+    kl_qp = entropy(q_smoothed, p_smoothed)
+    
+    return kl_pq + kl_qp
+
+def cal_mi_symmetric_kl(i, j, x, y, count):
+    """Compute symmetric KL divergence between X_{t-1} and Y_t."""
+    x_aligned = x[:-1]
+    y_aligned = y[1:]
+    skl = symmetric_kl_divergence(x_aligned, y_aligned)
+    return {'Gene1': i, 'Gene2': j, 'score': skl}
+
+def cal_kl2_divergence(data, n_jobs=1, TF_set=[]):
+    print(f'---------- data.shape= {data.shape}')
+    if len(TF_set) == 0:
+        gene_combs = list(permutations(data.columns.values, 2))
+    else:
+        TG_set = set(data.columns)
+        gene_combs = product(TF_set, TG_set)
+    gene_combs = filter(lambda x: x[0] != x[1], gene_combs)
+    params = [[v[0], v[1], data[v[0]].values, data[v[1]].values, []] for v in gene_combs]
+    result = pqdm(params, cal_mi_kl, n_jobs=n_jobs, argument_type='args', desc='Computations of KL')
+    df_res = pd.DataFrame.from_dict(result)
+    return df_res
+
+
+def cal_symmetric_kl2_divergence(data, n_jobs=1, TF_set=[]):
+    print(f'---------- data.shape= {data.shape}')
+    if len(TF_set) == 0:
+        gene_combs = list(permutations(data.columns.values, 2))
+    else:
+        TG_set = set(data.columns)
+        gene_combs = product(TF_set, TG_set)
+    gene_combs = filter(lambda x: x[0] != x[1], gene_combs)
+    params = [[v[0], v[1], data[v[0]].values, data[v[1]].values, []] for v in gene_combs]
+    result = pqdm(params, cal_mi_symmetric_kl, n_jobs=n_jobs, argument_type='args', desc='Computations of Symmetric KL')
+    df_res = pd.DataFrame.from_dict(result)
+    return df_res
 
