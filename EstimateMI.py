@@ -191,17 +191,17 @@ def compute_optimal_lag(x, y, max_lag=None):
     # find lag with max distance correlation
     optimal_lag = np.argmax(dcorrs)
     return optimal_lag
-
+'''
 def cal_mi_divergence(i, j, x, y):
     """
     For gene pair (i,j), compute MI after aligning with optimal lag.
     x, y are divergence profiles.
     """
-    # 1️⃣ Find optimal lag
+    # 1️ Find optimal lag
     #opt_lag = compute_optimal_lag(x, y)
     opt_lag = 1  # fixed time lag = 1
 
-    # 2️⃣ Align time series
+    # 2️ Align time series
     if opt_lag == 0:
         x_aligned = x
         y_aligned = y
@@ -209,20 +209,21 @@ def cal_mi_divergence(i, j, x, y):
         x_aligned = x[:-opt_lag]
         y_aligned = y[opt_lag:]
     
-    # 3️⃣ Reshape for MI_Gao
+    # 3 Reshape for MI_Gao
     if x_aligned.ndim == 1:
         x_aligned = x_aligned.reshape((-1, 1))
     if y_aligned.ndim == 1:
         y_aligned = y_aligned.reshape((-1, 1))
     
-    # 4️⃣ Compute MI
+    # 4️ Compute MI
     #mi = max(MI_Gao(x_aligned, y_aligned), 0)
     
     #return {'Gene1': i, 'Gene2': j, 'score': mi}
     d = dcor.distance_correlation(x_aligned, y_aligned)
     return {'Gene1': i, 'Gene2': j, 'score': d}
-
-#replace the MI with forward KL divergence
+'''
+########################################### 07/13
+# forward KL based score
 def kl_divergence(p, q):
     """Compute KL(P||Q) between empirical distributions of two genes."""
     # Smooth to avoid zeros (critical for scRNA-seq)
@@ -237,7 +238,7 @@ def cal_mi_kl(i, j, x, y, count):
     kl = kl_divergence(x_aligned, y_aligned)
     return {'Gene1': i, 'Gene2': j, 'score': kl}
 
-#replace MI with symmetric KL:
+# symmetric KL based score:
 def symmetric_kl_divergence(p, q):
     """Compute symmetric KL divergence: D_KL(P||Q) + D_KL(Q||P)"""
     p_smoothed = (p + 1e-10) / (np.sum(p) + 1e-10)
@@ -248,14 +249,14 @@ def symmetric_kl_divergence(p, q):
     
     return kl_pq + kl_qp
 
-def cal_mi_symmetric_kl(i, j, x, y, count):
+def cal_kl_symmetric(i, j, x, y, count):
     """Compute symmetric KL divergence between X_{t-1} and Y_t."""
     x_aligned = x[:-1]
     y_aligned = y[1:]
     skl = symmetric_kl_divergence(x_aligned, y_aligned)
     return {'Gene1': i, 'Gene2': j, 'score': skl}
 
-def cal_kl2_divergence(data, n_jobs=1, TF_set=[]):
+def cal_kl2(data, n_jobs=1, TF_set=[]):
     print(f'---------- data.shape= {data.shape}')
     if len(TF_set) == 0:
         gene_combs = list(permutations(data.columns.values, 2))
@@ -269,7 +270,7 @@ def cal_kl2_divergence(data, n_jobs=1, TF_set=[]):
     return df_res
 
 
-def cal_symmetric_kl2_divergence(data, n_jobs=1, TF_set=[]):
+def cal_kl2_symmetric(data, n_jobs=1, TF_set=[]):
     print(f'---------- data.shape= {data.shape}')
     if len(TF_set) == 0:
         gene_combs = list(permutations(data.columns.values, 2))
@@ -278,7 +279,37 @@ def cal_symmetric_kl2_divergence(data, n_jobs=1, TF_set=[]):
         gene_combs = product(TF_set, TG_set)
     gene_combs = filter(lambda x: x[0] != x[1], gene_combs)
     params = [[v[0], v[1], data[v[0]].values, data[v[1]].values, []] for v in gene_combs]
-    result = pqdm(params, cal_mi_symmetric_kl, n_jobs=n_jobs, argument_type='args', desc='Computations of Symmetric KL')
+    result = pqdm(params, cal_kl_symmetric, n_jobs=n_jobs, argument_type='args', desc='Computations of Symmetric KL')
     df_res = pd.DataFrame.from_dict(result)
     return df_res
+
+#JS-based score:
+def js_divergence(p, q):
+    """Compute Jensen-Shannon divergence between p and q"""
+    p_smoothed = (p + 1e-10) / (np.sum(p) + 1e-10)
+    q_smoothed = (q + 1e-10) / (np.sum(q) + 1e-10)
+    m = 0.5 * (p_smoothed + q_smoothed)
+    return 0.5 * entropy(p_smoothed, m) + 0.5 * entropy(q_smoothed, m)
+
+def cal_js(i, j, x, y, count):
+    """Compute JS divergence between X_{t-1} and Y_t."""
+    x_aligned = x[:-1]
+    y_aligned = y[1:]
+    js = js_divergence(x_aligned, y_aligned)
+    return {'Gene1': i, 'Gene2': j, 'score': js}
+
+def cal_js2(data, n_jobs=1, TF_set=[]):
+    print(f'---------- data.shape= {data.shape}')
+    if len(TF_set) == 0:
+        gene_combs = list(permutations(data.columns.values, 2))
+    else:
+        TG_set = set(data.columns)
+        gene_combs = product(TF_set, TG_set)
+    gene_combs = filter(lambda x: x[0] != x[1], gene_combs)
+    params = [[v[0], v[1], data[v[0]].values, data[v[1]].values, []] for v in gene_combs]
+    result = pqdm(params, cal_js, n_jobs=n_jobs, argument_type='args', desc='Computations of JS divergence')
+    df_res = pd.DataFrame.from_dict(result)
+    return df_res
+
+
 
