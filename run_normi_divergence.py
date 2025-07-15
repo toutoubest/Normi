@@ -2,7 +2,7 @@
 #pip install pandas numpy scipy matplotlib tqdm dcor pqdm scikit-learn(terminal)
 import pandas as pd
 from PreprocessData import smooth_divergence
-from EstimateMI import cal_mi2_divergence as cal_mutual_information
+from psedoScore import cal_mi2_divergence as cal_mutual_information
 #from mRMR import MRMR2
 from mRMR import MRMR2_divergence
 from Evaluate import concat_ref, cal_auc_aupr
