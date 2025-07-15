@@ -8,6 +8,8 @@ import dcor
 from scipy.special import digamma
 from math import log, floor
 from scipy.stats import entropy
+from scipy.stats import wasserstein_distance
+from scipy.stats import energy_distance 
 
 
 def MI_Gao(x,y,k=5):
@@ -222,7 +224,7 @@ def cal_mi_divergence(i, j, x, y):
     d = dcor.distance_correlation(x_aligned, y_aligned)
     return {'Gene1': i, 'Gene2': j, 'score': d}
 '''
-########################################### 07/13
+########################################### 
 # forward KL based score
 def kl_divergence(p, q):
     """Compute KL(P||Q) between empirical distributions of two genes."""
@@ -310,6 +312,127 @@ def cal_js2(data, n_jobs=1, TF_set=[]):
     result = pqdm(params, cal_js, n_jobs=n_jobs, argument_type='args', desc='Computations of JS divergence')
     df_res = pd.DataFrame.from_dict(result)
     return df_res
+###backward KL:
+def cal_backward(i, j, x, y, count):
+    """Compute backward KL: KL(Y_t || X_{t-1})"""
+    x_aligned = x[:-1]
+    y_aligned = y[1:]
+    return {'Gene1': i, 'Gene2': j, 'score': entropy(y_aligned, x_aligned)}  # assume already smoothed
+
+def cal_backward_kl(data, n_jobs=1, TF_set=[]):
+    print(f"---------- data.shape= {data.shape}")
+    if len(TF_set) == 0:
+        gene_combs = list(permutations(data.columns.values, 2))
+    else:
+        TG_set = set(data.columns)
+        gene_combs = product(TF_set, TG_set)
+
+    gene_combs = filter(lambda x: x[0] != x[1], gene_combs)
+    params = [[i, j, data[i].values, data[j].values, []] for (i, j) in gene_combs]
+
+    result = pqdm(params, cal_backward, n_jobs=n_jobs, argument_type='args', desc='Backward KL Computation')
+    df_res = pd.DataFrame.from_dict(result)
+    return df_res
+
+def cal_wasserstein(i, j, x, y, count):
+    return {'Gene1': i, 'Gene2': j, 'score': wasserstein_distance(x[:-1], y[1:])}
+
+def cal_wasserstein2(data, n_jobs=1, TF_set=[]):
+    if len(TF_set) == 0:
+        gene_combs = list(permutations(data.columns.values, 2))
+    else:
+        TG_set = set(data.columns)
+        gene_combs = product(TF_set, TG_set)
+
+    gene_combs = filter(lambda x: x[0] != x[1], gene_combs)
+    params = [[i, j, data[i].values, data[j].values, []] for (i, j) in gene_combs]
+
+    result = pqdm(params, cal_wasserstein, n_jobs=n_jobs, argument_type='args', desc='Wasserstein Computation')
+    return pd.DataFrame(result)
 
 
+def cal_energy(i, j, x, y, count):
+    try:
+        score = energy_distance(x[:-1], y[1:])
+        return {'Gene1': i, 'Gene2': j, 'score': score}
+    except Exception as e:
+        print(f"Error in cal_energy({i}, {j}): {e}")
+        return {'Gene1': i, 'Gene2': j, 'score': np.nan}
+
+def cal_energy2(data, n_jobs=1, TF_set=[]):
+    # 1. Set up gene combinations
+    if len(TF_set) == 0:
+        gene_combs = list(permutations(data.columns.values, 2))
+    else:
+        TG_set = set(data.columns)
+        gene_combs = list(product(TF_set, TG_set))
+
+    gene_combs = list(filter(lambda x: x[0] != x[1], gene_combs))
+    print(f"Total gene pairs to process: {len(gene_combs)}")
+
+    # 2. Build parameter list
+    params = [[i, j, data[i].values, data[j].values, []] for (i, j) in gene_combs]
+    print(f"Example param: {params[0][:2]}")
+
+    # 3. Run parallel processing
+    result = pqdm(params, cal_energy, n_jobs=n_jobs, argument_type='args', desc='Energy Distance Computation')
+
+    # 4. Debug: check result structure
+    print("First 3 results returned:")
+    for item in result[:3]:
+        print(item)
+
+    # 5. Convert to DataFrame
+    if isinstance(result, list) and isinstance(result[0], dict) and "Gene1" in result[0]:
+        df = pd.DataFrame(result)
+        print("DataFrame columns:", df.columns.tolist())
+        return df
+    else:
+        raise ValueError("Unexpected result structure from pqdm.")
+
+
+
+def cal_cramer(i, j, x, y, count):
+    try:
+        score = dcor.distance_correlation(x[:-1], y[1:])
+    except Exception:
+        score = np.nan
+    return {'Gene1': i, 'Gene2': j, 'score': score}
+
+
+def cal_cramer2(data, n_jobs=1, TF_set=[]):
+    from itertools import permutations, product
+    from pqdm.processes import pqdm
+
+    if len(TF_set) == 0:
+        gene_combs = list(permutations(data.columns.values, 2))
+    else:
+        TG_set = set(data.columns)
+        gene_combs = product(TF_set, TG_set)
+
+    gene_combs = filter(lambda x: x[0] != x[1], gene_combs)
+    params = [[i, j, data[i].values, data[j].values, []] for (i, j) in gene_combs]
+
+    result = pqdm(params, cal_cramer, n_jobs=n_jobs, argument_type='args', desc='Cramér Distance Computation')
+
+    # Debug print to confirm structure
+    print("Cramér result preview:", result[:3])
+    
+    return pd.DataFrame(result)
+
+
+
+#  Unified Divergence Runner 
+def run_divergence(df, score_func, n_jobs=4, TF_set=[]):
+    if len(TF_set) == 0:
+        gene_combs = list(permutations(df.columns, 2))
+    else:
+        TG_set = set(df.columns)
+        gene_combs = product(TF_set, TG_set)
+
+    gene_combs = filter(lambda x: x[0] != x[1], gene_combs)
+    params = [[i, j, df[i].values, df[j].values, []] for (i, j) in gene_combs]
+    result = pqdm(params, score_func, n_jobs=n_jobs, argument_type='args', desc=f"Score: {score_func.__name__}")
+    df_res = pd.DataFrame.from_dict(result)
+    return df_res
 
