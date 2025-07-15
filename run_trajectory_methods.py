@@ -5,19 +5,22 @@ Created on Wed Jul  2 14:28:04 2025
 
 @author: linglingzhang
 """
-# Replace the Slingshot with 4 new pseudotime methods: phate pca,diffmap,paga , and get the pseudotime csvs:
+# Replace the Slingshot
 import pandas as pd
+import numpy as np
 import scanpy as sc
 import phate
 import matplotlib.pyplot as plt
-from EstimateMI import compute_divergence_average_3lags
-from Evaluate import add_sign_and_plot
+from Evaluate import concat_ref, cal_auc_aupr, add_sign_and_plot
 import os
 os.makedirs("outputtimelag=1", exist_ok=True)
+from PreprocessData import smooth_divergence
+from EstimateMI import cal_mi2_divergence as cal_mutual_information
+from mRMR import MRMR2_divergence
 
 
-
-# Load Data 
+#############Getting the csvs using 4 pseudotime methods:
+#  Load Data 
 df_exp = pd.read_csv("input/ExpressionData.csv", index_col=0)
 adata = sc.AnnData(df_exp)
 adata.var_names_make_unique()
@@ -38,7 +41,7 @@ df_phate = pd.DataFrame({
     "cell_id": adata.obs_names,
     "Pseudotime": adata.obs["phate_pseudotime"].values
 })
-df_phate.to_csv("phate_pseudotime_timlag=1.csv", index=False)
+df_phate.to_csv("phate_pseudotime_timlag=2.csv", index=False)
 
 #  Diffusion Maps 
 print("=== Running Diffusion Maps ===")
@@ -55,7 +58,7 @@ df_diff = pd.DataFrame({
     "cell_id": adata.obs_names,
     "Pseudotime": adata.obs["dpt_pseudotime"].values
 })
-df_diff.to_csv("diffmap_pseudotime_timlag=1.csv", index=False)
+df_diff.to_csv("diffmap_pseudotime_timlag=2.csv", index=False)
 print("Saved: diffmap_pseudotime.csv")
 
 #  PCA-based Pseudotime 
@@ -69,10 +72,10 @@ df_pca = pd.DataFrame({
     "cell_id": adata.obs_names,
     "Pseudotime": adata.obs["pca_pseudotime"].values
 })
-df_pca.to_csv("pca_pseudotime_timlag=1.csv", index=False)
+df_pca.to_csv("pca_pseudotime_timlag=2.csv", index=False)
 print("Saved: pca_pseudotime.csv")
 
-# PAGA 
+#  PAGA 
 print("=== Running PAGA ===")
 sc.pp.pca(adata)
 sc.pp.neighbors(adata)
@@ -87,12 +90,13 @@ df_paga = pd.DataFrame({
     "cell_id": adata.obs_names,
     "Pseudotime": adata.obs["dpt_pseudotime"].values
 })
-df_paga.to_csv("paga_pseudotime_timlag=1.csv", index=False)
+df_paga.to_csv("paga_pseudotime_timlag=2.csv", index=False)
 print("Saved: paga_pseudotime.csv")
 
 
-##################################
-# 5 runs to use 4 pseudotie methods with 3 divergence based score:
+
+#######################3
+# 5 runs to use 4 pseudotie methods with 3 divergence based score:forward KL, symmetric KL, JS
 import pandas as pd
 import numpy as np
 import os
@@ -183,3 +187,96 @@ for method_name, pse_path in pseudotime_files.items():
 df_summary = pd.DataFrame(all_summary)
 df_summary.to_csv(f"{output_dir}/summary_4methods_5runs.csv", index=False)
 print("\n=== Finished: summary_4methods_5runs.csv ===")
+
+#############################
+#use some other distances based score:
+import os
+import numpy as np
+import pandas as pd
+from EstimateMI import cal_backward_kl, cal_wasserstein2, cal_energy2, cal_cramer2
+from mRMR import MRMR2_divergence
+from Evaluate import concat_ref, cal_auc_aupr, add_sign_and_plot
+from PreprocessData import smooth
+
+def add_noise(df_expr, noise_level=0.05):
+    """Add Gaussian noise based on expression range."""
+    ranges = (df_expr.max() - df_expr.min()).values
+    noise = np.random.randn(*df_expr.shape) * ranges
+    df_noisy = df_expr + noise * noise_level
+    df_noisy[df_noisy < 0] = 0
+    return df_noisy
+
+#  Setup 
+output_dir = "outputtimelag=1_4distances_4pseudotime"
+os.makedirs(output_dir, exist_ok=True)
+df_exp_orig = pd.read_csv("input/ExpressionData.csv", index_col=0)
+df_ref = pd.read_csv("input/refNetwork.csv", usecols=["Gene1", "Gene2"])
+
+#  Define divergence methods and function names that match your import 
+divergences = {
+    "backward_kl": cal_backward_kl,
+    "wasserstein": cal_wasserstein2,
+    "energy": cal_energy2,
+    "cramer": cal_cramer2,
+}
+
+# Pseudotime files 
+pseudotime_files = {
+    "phate": "phate_pseudotime_timelag=1.csv",
+    "pca": "pca_pseudotime_timlag=1.csv",
+    "diffmap": "diffmap_pseudotime_timlag=1.csv",
+    "paga": "paga_pseudotime_timlag=1.csv"
+}
+
+# Run experiment 
+summary_all = []
+
+for pt_name, pt_path in pseudotime_files.items():
+    print(f"\n=== Pseudotime Method: {pt_name} ===")
+    df_pse = pd.read_csv(pt_path, index_col=0)
+
+    for run in range(1, 6):
+        print(f"  >> Run {run}")
+        df_exp_noisy = add_noise(df_exp_orig)
+        df_exp_noisy.to_csv(f"{output_dir}/ExpressionData_{pt_name}_run{run}.csv")
+
+        # Step 1: Average smoothing
+        _, df_smoothed = smooth(df_pse, df_exp_noisy, slipe=1, k=5)
+
+        run_summary = {"Pseudotime": pt_name, "Run": run}
+        for div_name, score_func in divergences.items():
+            print(f"     - Score: {div_name}")
+            df_score = score_func(df_smoothed, n_jobs=4)
+            if df_score.empty:
+                print(f"       Skipped {div_name} due to empty score matrix")
+                run_summary[f"{div_name}_AUROC"] = np.nan
+                run_summary[f"{div_name}_AUPRC"] = np.nan
+                continue
+
+            df_mrmr = MRMR2_divergence(df_score, n_jobs=4)
+            df_eval = concat_ref(df_mrmr, df_ref)
+            df_eval = df_eval[np.isfinite(df_eval["score"])]
+            result = cal_auc_aupr(df_eval)
+            run_summary[f"{div_name}_AUROC"] = result["AUROC"]
+            run_summary[f"{div_name}_AUPRC"] = result["AUPRC"]
+
+            # Save network plot
+            plot_path = f"{output_dir}/network_{pt_name}_{div_name}_run{run}.pdf"
+            add_sign_and_plot(df_mrmr.copy(), "input/ExpressionData.csv", top_k=50,
+                              output_pdf=plot_path, plot=False)
+
+        summary_all.append(run_summary)
+
+#  Save summary table 
+df_summary = pd.DataFrame(summary_all)
+df_summary.to_csv(f"{output_dir}/summary_4pseudotime_4divergence.csv", index=False)
+print("Saved summary to:", f"{output_dir}/summary_4pseudotime_4divergence.csv")
+
+# === Calculate mean and std ===
+df_mean = df_summary.groupby("Pseudotime").mean(numeric_only=True).rename_axis("Pseudotime")
+df_std = df_summary.groupby("Pseudotime").std(numeric_only=True).rename_axis("Pseudotime")
+
+# Combine and save
+df_mean.to_csv(f"{output_dir}/summary_4pseudotime_mean.csv")
+df_std.to_csv(f"{output_dir}/summary_4pseudotime_std.csv")
+print(" Finished: All runs completed.")
