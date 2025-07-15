@@ -5,7 +5,7 @@ Created on Wed Jul  2 14:28:04 2025
 
 @author: linglingzhang
 """
-# Replace the Slingshot
+# Replace the Slingshot with 4 new pseudotime methods: phate pca,diffmap,paga , and get the pseudotime csvs:
 import pandas as pd
 import scanpy as sc
 import phate
@@ -90,74 +90,96 @@ df_paga = pd.DataFrame({
 df_paga.to_csv("paga_pseudotime_timlag=1.csv", index=False)
 print("Saved: paga_pseudotime.csv")
 
-###############################################
-# Using above 4 methods get auc and roc:
+
+##################################
+# 5 runs to use 4 pseudotie methods with 3 divergence based score:
 import pandas as pd
-from PreprocessData import smooth_divergence
-from EstimateMI import cal_mi2_divergence as cal_mutual_information
-from mRMR import MRMR2_divergence
-from Evaluate import concat_ref, cal_auc_aupr
+import numpy as np
+import os
+from EstimateMI import cal_kl2, cal_kl2_symmetric, cal_js2
+from mRMR import MRMR2_kl, MRMR2_divergence
+from Evaluate import concat_ref, cal_auc_aupr, add_sign_and_plot
+from PreprocessData import smooth  # use average smoothing
 
-# Load expression and reference network
-df_exp = pd.read_csv("input/ExpressionData.csv", index_col=0)
-df_ref = pd.read_csv("input/refNetwork.csv", usecols=['Gene1', 'Gene2'])
+output_dir = "outputtimelag=1_divergence4methods"
+os.makedirs(output_dir, exist_ok=True)
 
-# Define pseudotime CSVs (from 4 methods)
+
+def add_noise_to_expression(expression_file: str, output_file: str, noise_level: float = 0.05) -> None:
+    """Add Gaussian noise to gene expression data and save."""
+    df = pd.read_csv(expression_file, index_col=0)
+    ranges = df.max() - df.min()
+    noise = np.random.randn(*df.shape) * (ranges.values * noise_level)
+    df_noisy = df + noise
+    df_noisy[df_noisy < 0] = 0  # clip negative values
+    df_noisy.to_csv(output_file)
+
+
+# Load reference network
+df_ref = pd.read_csv("input/refNetwork.csv", usecols=["Gene1", "Gene2"])
+
+# List of pseudotime method CSVs
 pseudotime_files = {
-    "phate": "phate_pseudotime_timlag=1.csv",
-    "diffmap": "diffmap_pseudotime_timlag=1.csv",
+    "phate": "phate_pseudotime_timelag=1.csv",
     "pca": "pca_pseudotime_timlag=1.csv",
+    "diffmap": "diffmap_pseudotime_timelag=1.csv",
     "paga": "paga_pseudotime_timlag=1.csv"
 }
 
+# Divergence-based methods
+divergences = {
+    "forward_kl": (cal_kl2, MRMR2_kl),
+    "symmetric_kl": (cal_kl2_symmetric, MRMR2_divergence),
+    "js": (cal_js2, MRMR2_divergence),
+}
 
-# Distances to test
-distance_list = [1, 5, 6, 7, 8, 9, 10, 11]
+all_summary = []
 
-# Save results
-all_results = []
+for method_name, pse_path in pseudotime_files.items():
+    df_pse = pd.read_csv(pse_path, index_col=0)
+    print(f"\n=== Pseudotime Method: {method_name} ===")
 
-for method_name, pseudo_file in pseudotime_files.items():
-    print(f"\n Evaluating method: {method_name} ")
-    df_pse = pd.read_csv(pseudo_file, index_col=0)
+    run_scores = {div: [] for div in divergences}
 
-    method_results = []
-    for distance in distance_list:
-        print(f"--- Normi timelag=1 with {method_name} pseudotime and divergence distance={distance} ---")
-        num_windows, df_exp_smooth = smooth_divergence(df_pse, df_exp, slide=1, k=5, distance=distance)
-        df_mi = cal_mutual_information(df_exp_smooth, n_jobs=1)
-        
-            
-        df_mi = df_mi[df_mi.score > 0].sort_values(by="score", ascending=False)
-        df_mrmr = MRMR2_divergence(df_mi, n_jobs=1)
-        df_mrmr = df_mrmr[df_mrmr.score > 0].sort_values(by="score", ascending=False)
+    for run in range(1, 6):
+        print(f"  >> Run {run}")
+        noise_path = f"{output_dir}/ExpressionData_{method_name}_run{run}.csv"
+        add_noise_to_expression("input/ExpressionData.csv", noise_path)
+        df_exp_noisy = pd.read_csv(noise_path, index_col=0)
 
-        out_file = f"outputtimelag=1/rankedEdges_{method_name}_dist{distance}.csv"
+        # Use average smoothing (Normi-style)
+        count, df_exp_sorted = smooth(df_pse, df_exp_noisy, slipe=1, k=5)
 
-        df_mrmr.to_csv(out_file, index=False)
-        #add network plot pdfs:
-        pdf_out = f"outputtimelag=1/GRN_{method_name}_dist{distance}.pdf"
+        for name, (score_func, mrmr_func) in divergences.items():
+            df_score = score_func(df_exp_sorted, n_jobs=4)
+            df_mrmr = mrmr_func(df_score, n_jobs=4)
+            df_eval = concat_ref(df_mrmr, df_ref)
 
+            # Clean invalid scores
+            df_eval = df_eval[np.isfinite(df_eval['score'])]
 
-        add_sign_and_plot(
-            df_edge=df_mrmr,
-            expression_file="input/ExpressionData.csv",
-            top_k=100,
-            plot=False,
-            output_pdf=pdf_out
-        )
-        df_eval = concat_ref(df_mrmr, df_ref)
-        res = cal_auc_aupr(df_eval)
-        print(f"→ AUROC={res['AUROC']:.4f}, AUPRC={res['AUPRC']:.4f}")
+            res = cal_auc_aupr(df_eval)
+            run_scores[name].append((res["AUROC"], res["AUPRC"]))
 
-        method_results.append({
-            'Method': method_name, 'Distance': distance,
-            'AUROC': res['AUROC'], 'AUPRC': res['AUPRC']
+            plot_path = f"{output_dir}/network_{method_name}_{name}_run{run}.pdf"
+            add_sign_and_plot(df_mrmr.copy(), "input/ExpressionData.csv", top_k=50, output_pdf=plot_path, plot=False)
+
+    # Save mean + individual results
+    summary_row = {"Method": method_name}
+    for name in divergences:
+        aurocs = [s[0] for s in run_scores[name]]
+        auprcs = [s[1] for s in run_scores[name]]
+        summary_row.update({
+            f"{name}_AUROC1": aurocs[0], f"{name}_AUROC2": aurocs[1], f"{name}_AUROC3": aurocs[2],
+            f"{name}_AUROC4": aurocs[3], f"{name}_AUROC5": aurocs[4],
+            f"{name}_AUROC_mean": np.mean(aurocs),
+            f"{name}_AUPRC1": auprcs[0], f"{name}_AUPRC2": auprcs[1], f"{name}_AUPRC3": auprcs[2],
+            f"{name}_AUPRC4": auprcs[3], f"{name}_AUPRC5": auprcs[4],
+            f"{name}_AUPRC_mean": np.mean(auprcs),
         })
-    all_results.extend(method_results)
+    all_summary.append(summary_row)
 
 # Save final summary
-df_all = pd.DataFrame(all_results)
-df_all.to_csv("outputtimelag=1/Divergence_AllMethods_Summary_timlag=1.csv", index=False)
-print("\n=== Finished! Summary saved to 'Divergence_AllMethods_Summary_timlag=1.csv' ===")
-
+df_summary = pd.DataFrame(all_summary)
+df_summary.to_csv(f"{output_dir}/summary_4methods_5runs.csv", index=False)
+print("\n=== Finished: summary_4methods_5runs.csv ===")
