@@ -149,6 +149,11 @@ def cal_mi2(data, count, n_jobs=1, TF_set=[]):
     result = pqdm(params, cal_mi, n_jobs=n_jobs, argument_type='args', desc='Computations of MI')
     df_res = pd.DataFrame.from_dict(result)
     return df_res  
+    
+def cal_mi_divergence(i, j, x, y):
+    """Wraps KL divergence in a dict output format for pqdm"""
+    score = kl_divergence(x, y)
+    return {'Gene1': i, 'Gene2': j, 'score': score}
 
 def cal_mi2_divergence(data, n_jobs=1, TF_set=[]):
 
