@@ -66,82 +66,97 @@ def cal_EPR(df, k, sparsity):
 
 
 def add_sign_and_plot(df_edge, expression_file, top_k=None, plot=True, output_pdf=None):
-    '''
-    Add activation/inhibition labels to edges using partial correlation,
-    based only on genes involved in MI-ranked edges.
-
-    Parameters:
-    -----------
-    df_edge : pd.DataFrame
-        DataFrame with ['Gene1', 'Gene2', 'score'].
-    expression_file : str
-        Path to expression CSV file (cells × genes).
-    top_k : int or None
-        Top number of edges to keep.
-    plot : bool
-        Whether to plot network.
-    output_pdf : str or None
-        Path to save PDF.
-
-    Returns:
-    --------
-    df_edge : pd.DataFrame with 'sign' column.
-    '''
+    """
+    Plot gene regulatory network:
+    - Black solid arrow: Activation (positive partial correlation)
+    - Red dashed arrow: Inhibition (negative partial correlation)
+    Arrow direction follows df_edge (e.g., from KL or JS scores)
+    """
+    import pandas as pd
+    import numpy as np
+    import networkx as nx
+    import matplotlib.pyplot as plt
+    from sklearn.covariance import GraphicalLassoCV
+    from matplotlib.patches import FancyArrowPatch
 
     # Load expression data
-    df_exp_full = pd.read_csv(expression_file, index_col=0)
+    df_exp = pd.read_csv(expression_file, index_col=0)
+    all_genes = sorted(df_exp.columns.tolist())
 
-    # Keep top_k edges
-    df_edge = df_edge.sort_values(by='score', ascending=False)
+    # Limit to top_k edges
+    df_edge = df_edge.sort_values('score', ascending=False)
     if top_k is not None:
-        df_edge = df_edge.iloc[:top_k]
+        df_edge = df_edge.head(top_k)
 
-    # Get unique genes in selected edges
-    selected_genes = sorted(set(df_edge['Gene1']).union(df_edge['Gene2']))
+    # Drop duplicate directed edges
+    df_edge = df_edge.drop_duplicates(subset=['Gene1', 'Gene2'])
 
-    # Subset expression data
-    df_exp = df_exp_full[selected_genes]
+    # Compute partial correlation matrix
     X = df_exp.values
-    gene_to_idx = {g: i for i, g in enumerate(df_exp.columns)}
-
-    # Compute partial correlation using only selected genes
     model = GraphicalLassoCV().fit(X)
     precision = model.precision_
     d = np.sqrt(np.diag(precision))
     partial_corr = -precision / np.outer(d, d)
     np.fill_diagonal(partial_corr, 1.0)
+    gene_to_idx = {g: i for i, g in enumerate(df_exp.columns)}
 
-    # Add activation/inhibition sign
-    signs = []
+    # Create graph and layout
+    G = nx.DiGraph()
+    G.add_nodes_from(all_genes)
+    pos = nx.circular_layout(G)
+
+    # Start plot
+    plt.figure(figsize=(12, 10))
+    ax = plt.gca()
+    ax.set_aspect('equal')
+
+    # Draw nodes and labels
+    nx.draw_networkx_nodes(G, pos, node_color='lightblue', node_size=1200, edgecolors='black')
+    nx.draw_networkx_labels(G, pos, font_size=10, font_weight='bold')
+
+    # Draw directed edges with arrows and color based on sign
     for _, row in df_edge.iterrows():
-        i, j = gene_to_idx[row['Gene1']], gene_to_idx[row['Gene2']]
-        corr = partial_corr[i, j]
-        signs.append('activation' if corr > 0 else 'inhibition')
-    df_edge['sign'] = signs
+        g1, g2 = row['Gene1'], row['Gene2']
+        if g1 not in gene_to_idx or g2 not in gene_to_idx:
+            continue
+        val = partial_corr[gene_to_idx[g1], gene_to_idx[g2]]
+        if np.isnan(val):
+            continue
 
-    # Plot
-    if plot or output_pdf:
-        G = nx.DiGraph()
-        for _, row in df_edge.iterrows():
-            style = 'solid' if row['sign'] == 'activation' else 'dashed'
-            color = 'black' if row['sign'] == 'activation' else 'red'
-            G.add_edge(row['Gene1'], row['Gene2'], style=style, color=color)
+        x_start, y_start = pos[g1]
+        x_end, y_end = pos[g2]
 
-        pos = nx.circular_layout(G)
-        plt.figure(figsize=(8, 8))
-        nx.draw_networkx_nodes(G, pos, node_size=600)
-        nx.draw_networkx_labels(G, pos, font_size=9)
+        # Assign style
+        color = 'black' if val > 0 else 'red'
+        linestyle = 'solid' if val > 0 else (0, (5, 5))  # dashed
 
-        solid_edges = [(u, v) for u, v in G.edges if G[u][v]['style'] == 'solid']
-        dashed_edges = [(u, v) for u, v in G.edges if G[u][v]['style'] == 'dashed']
-        nx.draw_networkx_edges(G, pos, edgelist=solid_edges, edge_color='black', arrows=True, arrowsize=15)
-        nx.draw_networkx_edges(G, pos, edgelist=dashed_edges, edge_color='red', style='dashed', arrows=True, arrowsize=15)
+        arrow = FancyArrowPatch(
+            (x_start, y_start), (x_end, y_end),
+            connectionstyle="arc3,rad=0.1",
+            arrowstyle='-|>',
+            color=color,
+            linestyle=linestyle,
+            linewidth=1.5,
+            mutation_scale=25,   # arrow size
+            shrinkA=12, shrinkB=12,
+            zorder=1
+        )
+        ax.add_patch(arrow)
 
-        plt.title("Gene Regulatory Network with Activation/Inhibition")
-        if output_pdf:
-            plt.savefig(output_pdf, format='pdf', bbox_inches='tight')
-            print(f"Saved network plot to {output_pdf}")
-        if plot:
-            plt.show()
+    # Add custom legend
+    legend_handles = [
+        FancyArrowPatch((0, 0), (1, 0), arrowstyle='-|>', color='black', linestyle='solid', linewidth=1.5),
+        FancyArrowPatch((0, 0), (1, 0), arrowstyle='-|>', color='red', linestyle=(0, (5, 5)), linewidth=1.5)
+    ]
+    plt.legend(legend_handles, ['Activation', 'Inhibition'], loc='best')
+
+    plt.title("Gene Regulatory Network (19 Genes)", fontsize=14)
+    plt.axis('off')
+
+    if output_pdf:
+        plt.savefig(output_pdf, bbox_inches='tight', dpi=300, format='pdf')
+    if plot:
+        plt.show()
 
     return df_edge
+
