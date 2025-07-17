@@ -64,7 +64,8 @@ def MRMR2(data, n_jobs=1):
             print(type(result[i]))
     return df_res
 
-
+#lambda=1 version:
+'''
 def MRMR2_divergence(df_mi, n_jobs=1):
     """
     Modified mRMR using divergence scores instead of mutual information.
@@ -102,6 +103,79 @@ def MRMR2_divergence(df_mi, n_jobs=1):
             S.append(best_gene)
             df_res = pd.concat([df_res, pd.DataFrame([[best_gene, gene_z, scores[best_gene]]],
                                                      columns=['Gene1', 'Gene2', 'score'])])
+            U.remove(best_gene)
+
+    return df_res
+'''
+
+######different lambda version:
+def MRMR2_divergence(df_mi, n_jobs=1, lambda_val=1.0):
+    """
+    Modified mRMR using divergence scores (instead of mutual information).
+
+    Equation (9):
+        D*(X;Z) = D(X,Z) - λ * avg_{Y in S} D(X,Y)
+
+    Parameters:
+        df_mi: DataFrame with columns ['Gene1', 'Gene2', 'score']
+               where D(Gene1, Gene2) is the divergence score
+        lambda_val: penalty weight on redundancy
+        n_jobs: parallel jobs (currently unused here but kept for interface compatibility)
+
+    Returns:
+        df_res: selected top interactions (mRMR-filtered) as DataFrame
+    """
+    df_res = pd.DataFrame(columns=['Gene1', 'Gene2', 'score'])
+    target_genes = df_mi['Gene2'].drop_duplicates().tolist()
+
+    for gene_z in target_genes:
+        df_target = df_mi[df_mi['Gene2'] == gene_z]
+        df_target = df_target[df_target['Gene1'] != gene_z]  # remove self-loop
+        if df_target.empty:
+            continue
+
+        # Initialize
+        S = []  # selected TFs for this target gene
+        U = df_target.sort_values(by='score', ascending=False)['Gene1'].tolist()
+        scores_to_target = df_target.set_index('Gene1')['score'].to_dict()
+        all_scores = df_mi.set_index(['Gene1', 'Gene2'])['score'].to_dict()
+
+        while U:
+            best_score = -np.inf
+            best_gene = None
+            best_adjusted_score = -np.inf  # Track the adjusted score
+
+            for gene_x in U:
+                div_xz = scores_to_target.get(gene_x, 0)
+                if not S:
+                    adjusted_score = div_xz
+                else:
+                    redundancy_vals = [
+                        all_scores.get((gene_x, gene_y), np.nan)
+                        for gene_y in S
+                    ]
+                    redundancy_vals = [v for v in redundancy_vals if not np.isnan(v)]
+
+                    if redundancy_vals:
+                        adjusted_score = div_xz - lambda_val * np.mean(redundancy_vals)
+                    else:
+                        adjusted_score = div_xz
+
+                if adjusted_score > best_adjusted_score:
+                    best_adjusted_score = adjusted_score
+                    best_score = div_xz  # Original score
+                    best_gene = gene_x
+
+            if best_gene is None:
+                break
+
+            S.append(best_gene)
+            # Store both original and adjusted score
+            df_res = pd.concat([
+                df_res,
+                pd.DataFrame([[best_gene, gene_z, best_adjusted_score]],  # Use adjusted score here
+                             columns=['Gene1', 'Gene2', 'score'])
+            ])
             U.remove(best_gene)
 
     return df_res
