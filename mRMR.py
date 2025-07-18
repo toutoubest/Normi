@@ -4,7 +4,8 @@ from Evaluate import *
 from pqdm.processes import pqdm
 
 
-def MRMR(data_v, data):
+#def MRMR(data_v, data):
+def MRMR(data_v, data, lambda_val=1.0):
     '''
     Revise the mutual information of a specific taget gene and its TFs
 
@@ -36,7 +37,9 @@ def MRMR(data_v, data):
         temp = temp[['Gene1', 'score']]
         df = pd.merge(df, temp, on='Gene1', how='left').fillna(0)
         df['red'] += df['score']
-        df['temp'] = df['mi'] - df['red']/len(TF_selected)
+        #df['temp'] = df['mi'] - df['red']/len(TF_selected)
+        df['temp'] = df['mi'] - lambda_val * df['red']/len(TF_selected)
+
         df = df.sort_values(by='temp', ascending=False)
 
         add_edge = df.iloc[0][['Gene1', 'Gene2']]
@@ -50,11 +53,13 @@ def MRMR(data_v, data):
     return df_res
 
 
-def MRMR2(data, n_jobs=1):
+#def MRMR2(data, n_jobs=1):
+def MRMR2(data, n_jobs=1, lambda_val=1.0):
     print('---------- data.shape=', data.shape)
 
     target = list(data.Gene2.drop_duplicates())
-    params = [[data.loc[data.Gene2==v], data] for v in target]
+    #params = [[data.loc[data.Gene2==v], data] for v in target]
+    params = [[data.loc[data.Gene2==v], data, lambda_val] for v in target]
     result = pqdm(params, MRMR, n_jobs=n_jobs, argument_type='args', desc='Computations of MRMR')
     df_res = pd.DataFrame(columns=data.columns)
     for i in range(len(result)):
@@ -64,51 +69,10 @@ def MRMR2(data, n_jobs=1):
             print(type(result[i]))
     return df_res
 
-#lambda=1 version:
-'''
-def MRMR2_divergence(df_mi, n_jobs=1):
-    """
-    Modified mRMR using divergence scores instead of mutual information.
-    This implements:  D*(X;Z) = D(X,Z) - (1/|S|) * sum_{Y in S} D(X,Y)
-    """
-    df_res = pd.DataFrame(columns=df_mi.columns)
-    target = list(df_mi.Gene2.drop_duplicates())
 
-    for gene_z in target:
-        df_gene = df_mi[df_mi.Gene2 == gene_z]
-        df_gene = df_gene[df_gene.Gene1 != gene_z]
-        if df_gene.empty:
-            continue
+import pandas as pd
+import numpy as n
 
-        S = []  # selected TFs
-        U = df_gene.sort_values(by='score', ascending=False).Gene1.tolist()
-        scores = df_gene.set_index('Gene1')['score'].to_dict()
-
-        while len(U) > 0:
-            best_score = -float('inf')
-            best_gene = None
-            for gene_x in U:
-                div_xz = scores.get(gene_x, 0)
-                if len(S) == 0:
-                    score = div_xz
-                else:
-                    redun = [df_mi[(df_mi.Gene1 == gene_x) & (df_mi.Gene2 == gene_y)]['score'].values[0]
-                             for gene_y in S if not df_mi[(df_mi.Gene1 == gene_x) & (df_mi.Gene2 == gene_y)].empty]
-                    score = div_xz - sum(redun) / len(S) if redun else div_xz
-                if score > best_score:
-                    best_score = score
-                    best_gene = gene_x
-            if best_gene is None:
-                break
-            S.append(best_gene)
-            df_res = pd.concat([df_res, pd.DataFrame([[best_gene, gene_z, scores[best_gene]]],
-                                                     columns=['Gene1', 'Gene2', 'score'])])
-            U.remove(best_gene)
-
-    return df_res
-'''
-
-######different lambda version:
 def MRMR2_divergence(df_mi, n_jobs=1, lambda_val=1.0):
     """
     Modified mRMR using divergence scores (instead of mutual information).
@@ -179,3 +143,32 @@ def MRMR2_divergence(df_mi, n_jobs=1, lambda_val=1.0):
             U.remove(best_gene)
 
     return df_res
+
+
+#replace MI with KL:
+def MRMR2_kl(df_kl, n_jobs=1):
+    df_res = pd.DataFrame(columns=df_kl.columns)
+    for target in df_kl['Gene2'].unique():
+        # For each target, select TFs with highest KL(TF → target)
+        df_target = df_kl[df_kl['Gene2'] == target].copy()
+        df_target = df_target.sort_values('score', ascending=False)
+        
+        selected_tfs = []
+        for _, row in df_target.iterrows():
+            tf = row['Gene1']
+            kl_tf_target = row['score']
+            
+            # Penalize redundancy: avg KL(TF → other selected TFs)
+            redundancy = df_kl[
+                (df_kl['Gene1'] == tf) & 
+                (df_kl['Gene2'].isin(selected_tfs))
+            ]['score'].mean()
+            
+            adjusted_score = kl_tf_target - (redundancy if not np.isnan(redundancy) else 0)
+            if adjusted_score > 0:
+                df_res = pd.concat([df_res, pd.DataFrame([{
+                    'Gene1': tf, 'Gene2': target, 'score': adjusted_score
+                }])])
+                selected_tfs.append(tf)
+    return df_res
+
