@@ -1,13 +1,13 @@
 
-# psedoScore.py: 
+# psedoScore.py, mRMR.py
 
 Some distance based scores funcs are in here
 
 # Evaluate.py:
 some auroc and auprc definition
 
-# mRMR.py:
-write many  funcs of distance-based score and adjusted score
+# mRMR.py
+This script implements the divergence-based mRMR (minimum redundancy maximum relevance) algorithm for network inference. The core function MRMR2_divergence selects informative and non-redundant gene interactions by balancing mutual relevance scores and redundancy, with a sparsity-controlling regularization parameter lambda_val.
 
 # run_slingshot_distance_example.py: 
 this is the example code using slingshot and some distanced based score
