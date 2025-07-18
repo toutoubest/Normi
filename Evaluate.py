@@ -64,7 +64,7 @@ def cal_EPR(df, k, sparsity):
     return TP, EP, EPR
 
 
-
+########################### partial corr to decide activation/inhibition
 def add_sign_and_plot(df_edge, expression_file, top_k=None, plot=True, output_pdf=None):
     """
     Plot gene regulatory network:
@@ -144,12 +144,14 @@ def add_sign_and_plot(df_edge, expression_file, top_k=None, plot=True, output_pd
         ax.add_patch(arrow)
 
     # Add custom legend
-    legend_handles = [
-        FancyArrowPatch((0, 0), (1, 0), arrowstyle='-|>', color='black', linestyle='solid', linewidth=1.5),
-        FancyArrowPatch((0, 0), (1, 0), arrowstyle='-|>', color='red', linestyle=(0, (5, 5)), linewidth=1.5)
-    ]
-    plt.legend(legend_handles, ['Activation', 'Inhibition'], loc='best')
+    from matplotlib.lines import Line2D
 
+    # Add custom legend using Line2D instead of FancyArrowPatch
+    legend_handles = [
+    Line2D([0], [0], color='black', linewidth=0.7, linestyle='solid', label='Activation'),
+    Line2D([0], [0], color='red', linewidth=0.7, linestyle=(0, (5, 3)), label='Inhibition')
+]
+    plt.legend(handles=legend_handles, loc='upper right', frameon=True, fontsize=10)
     plt.title("Gene Regulatory Network (19 Genes)", fontsize=14)
     plt.axis('off')
 
@@ -159,4 +161,3 @@ def add_sign_and_plot(df_edge, expression_file, top_k=None, plot=True, output_pd
         plt.show()
 
     return df_edge
-
