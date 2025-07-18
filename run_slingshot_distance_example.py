@@ -426,7 +426,7 @@ def save_results_wide_format_fixed(df_summary, output_dir):
     return df_out
 
 ################################## 07/18
-############### we can use cross validation to find the best lambda for the auc of using cramer:
+############### we can use cross validation to find the best lambda for the auc of using cramer and plot the curve:
 
 import os
 import numpy as np
