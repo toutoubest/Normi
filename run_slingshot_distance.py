@@ -268,7 +268,7 @@ df_combined.to_csv(
 print("Combined summary with mean/std saved to:", 
       f"{output_dir}/summary_pearson_divergence_5runs_with_stats.csv")
 
-########################using different lambda:
+########################using different lambda for all distances:
 import os
 import numpy as np
 import pandas as pd
@@ -316,7 +316,7 @@ divergences = {
 summary_all = []
 
 lambda_vals = [0.1, 1, 1.5, 2, 2.5, 3, 5]  
-#lambda_vals = [0.1, 2] 
+
 for run in range(1, 6):
     print(f"\n=== RUN {run} ===")
     df_exp_noisy = add_noise(df_exp_orig)
@@ -424,3 +424,69 @@ def save_results_wide_format_fixed(df_summary, output_dir):
     df_out.to_csv(output_path, index=False)
     print(f"Saved corrected wide format to:\n{output_path}")
     return df_out
+
+################################## 07/18
+############### we can use cross validation to find the best lambda for the auc of using cramer:
+
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import KFold
+from PreprocessData import smooth
+from EstimateMI import cal_cramer2
+from mRMR import MRMR2_divergence
+from Evaluate import concat_ref, cal_auc_aupr
+
+
+output_dir = "output_cramer"
+os.makedirs(output_dir, exist_ok=True)
+
+
+df_exp = pd.read_csv("input/ExpressionData.csv", index_col=0)
+df_pse = pd.read_csv("input/PseudoTime.csv", index_col=0)
+df_ref = pd.read_csv("input/refNetwork.csv", usecols=["Gene1", "Gene2"])
+
+
+_, df_smoothed = smooth(df_pse, df_exp, slipe=1, k=5)
+
+
+lambda_vals = [0.1, 0.5, 1, 1.5, 2, 3, 5, 10]
+kf = KFold(n_splits=5, shuffle=True, random_state=0)
+results = []
+
+
+for lam in lambda_vals:
+    aucs = []
+    for train_idx, test_idx in kf.split(df_ref):
+        ref_train = df_ref.iloc[train_idx]
+        ref_test = df_ref.iloc[test_idx]
+
+        df_score = cal_cramer2(df_smoothed, n_jobs=4)
+        if set(df_score.columns) == set(df_smoothed.columns):
+            df_score = df_score.stack().reset_index()
+            df_score.columns = ['Gene1', 'Gene2', 'score']
+        df_score['score'] = pd.to_numeric(df_score['score'], errors='coerce')
+
+        df_mrmr = MRMR2_divergence(df_score, n_jobs=4, lambda_val=lam)
+        df_eval = concat_ref(df_mrmr, ref_test)
+        df_eval = df_eval[np.isfinite(df_eval["score"])]
+        auc = cal_auc_aupr(df_eval)["AUROC"]
+        aucs.append(auc)
+
+    mean_auc = np.mean(aucs)
+    results.append((lam, mean_auc))
+
+
+df_results = pd.DataFrame(results, columns=["lambda", "mean_AUROC"])
+df_results.to_csv(f"{output_dir}/cv_results_cramer.csv", index=False)
+
+
+plt.figure()
+plt.plot(df_results["lambda"], df_results["mean_AUROC"], marker="o")
+plt.xlabel("Lambda")
+plt.ylabel("Mean AUROC")
+plt.title("5-fold CV: AUROC vs Lambda (Cramér)")
+plt.grid(True)
+plt.savefig(f"{output_dir}/cv_auc_vs_lambda_cramer.pdf")
+plt.close()
