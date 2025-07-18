@@ -434,7 +434,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.model_selection import KFold
 from PreprocessData import smooth
-from EstimateMI import cal_cramer2
+from psedoScore import cal_cramer2
 from mRMR import MRMR2_divergence
 from Evaluate import concat_ref, cal_auc_aupr
 
