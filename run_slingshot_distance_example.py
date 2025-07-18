@@ -451,7 +451,7 @@ df_ref = pd.read_csv("input/refNetwork.csv", usecols=["Gene1", "Gene2"])
 _, df_smoothed = smooth(df_pse, df_exp, slipe=1, k=5)
 
 
-lambda_vals = [0.1, 0.5, 1, 1.5, 2, 3, 5, 10]
+lambda_vals = [0.1, 0.5, 1, 1.5, 2, 3, 5]
 kf = KFold(n_splits=5, shuffle=True, random_state=0)
 results = []
 
