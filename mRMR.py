@@ -4,6 +4,7 @@ from Evaluate import *
 from pqdm.processes import pqdm
 
 
+############## this is the lambda version of the adjusted score:
 #def MRMR(data_v, data):
 def MRMR(data_v, data, lambda_val=1.0):
     '''
