@@ -1,6 +1,7 @@
 
-#############################
-# this is 5 runs using the forward KL, symmetric Kl, JS based score:
+############################# All example using the slingshot
+######################
+#this is 5 runs using the forward KL, symmetric Kl, JS based score:
 import os
 import numpy as np
 import pandas as pd
@@ -85,13 +86,12 @@ from PreprocessData import smooth
 
 def add_noise(df_expr, noise_level=0.05):
     """Add Gaussian noise based on expression range."""
-    ranges = (df_expr.max() - df_expr.min()).values
-    noise = np.random.randn(*df_expr.shape) * ranges
+    ranges = (df_expr.max() - df_expr.min()).values  # shape: (genes,)
+    noise = np.random.randn(*df_expr.shape) * ranges  # shape: (cells, genes)
     df_noisy = df_expr + noise * noise_level
-    df_noisy[df_noisy < 0] = 0
+    df_noisy[df_noisy < 0] = 0  # ensure non-negative
     return df_noisy
 
-#  Paths
 df_exp_orig = pd.read_csv("input/ExpressionData.csv", index_col=0)
 df_pse = pd.read_csv("input/PseudoTime.csv", index_col=0)
 df_ref = pd.read_csv("input/refNetwork.csv", usecols=["Gene1", "Gene2"])
@@ -155,7 +155,7 @@ df_std = df_summary.std(numeric_only=True).to_frame(name='Std').T
 df_stats = pd.concat([df_mean, df_std], axis=0)
 df_stats.to_csv(f"{output_dir}/summary_4divergence_mean_std.csv", index=True)
 print("Saved mean/std summary to:", f"{output_dir}/summary_4divergence_mean_std.csv")
-####################add some pearson divergence, JS like, neyman, symmetric pearson based score:
+####################add some pearson divergence, JS- pearson, neyman, symmetric pearson based score:
 import os
 import numpy as np
 import pandas as pd
@@ -425,8 +425,8 @@ def save_results_wide_format_fixed(df_summary, output_dir):
     print(f"Saved corrected wide format to:\n{output_path}")
     return df_out
 
-################################## 07/18
-############### we can use cross validation to find the best lambda for the auc of using cramer and plot the curve:
+
+################# we can use cross validation to find the best lambda for the auc of using cramer and plot the curve:
 
 import os
 import numpy as np
@@ -490,3 +490,141 @@ plt.title("5-fold CV: AUROC vs Lambda (Cramér)")
 plt.grid(True)
 plt.savefig(f"{output_dir}/cv_auc_vs_lambda_cramer.pdf")
 plt.close()
+
+#################################### plot the boxplot of auc and prc:
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Load CSV files which we got from above and run_4new pseudo_methods_example.py
+
+df1 = pd.read_csv("summary_4sepudotime methods mean.csv")
+df2 = pd.read_csv("summary_slingshot_lambda1.5.csv")
+
+# Mapping for divergence name formatting and short names
+name_map = {
+    'forwardKL': ('Forward KL', 'F-KL'),
+    'symmetricKL': ('Symmetric KL', 'S-KL'),
+    'JS': ('JS', 'JS'),
+    'backwardKL': ('Backward KL', 'B-KL'),
+    'pearson': ('Pearson', 'Pearson'),
+    'symmetric_pearson': ('Symmetric Pearson', 'S-Pearson'),
+    'js_pearson': ('JS Pearson', 'JS-Pearson'),
+    'neyman': ('Neyman', 'Neyman'),
+    'wasserstein': ('Wasserstein', 'Wass'),
+    'energy': ('Energy', 'Energy'),
+    'cramer': ('Cramér', 'Cramer')
+}
+
+# Define plot order using the keys from name_map (excluding backwardKL and js_pearson)
+ordered_keys = ['forwardKL', 'symmetricKL', 'JS', 'pearson', 'symmetric_pearson', 'neyman', 'wasserstein', 'energy', 'cramer']
+ordered_names = [name_map[key][0] for key in ordered_keys]  # Full names
+short_names = [name_map[key][1] for key in ordered_keys]    # Short names
+
+# Pseudotime methods
+pseudotime_methods = ['diffmap', 'paga', 'pca', 'phate']
+
+# Collect AUROC data
+auroc_data = []
+for raw in name_map.keys():
+    if raw not in ordered_keys:  # Skip backwardKL and js_pearson
+        continue
+    vals = []
+    # Add values from df1 (diffmap, paga, pca, phate)
+    for method in pseudotime_methods:
+        value = df1[(df1['Divergence'] == raw) & (df1['Pseudotime'] == method)]['AUROC'].values
+        if len(value) > 0:
+            vals.append(float(value[0]))
+    # Add value from df2 (slingshot)
+    value = df2[df2['Divergence'] == raw]['AUROC (Mean ± SD)'].str.split(' ± ').str[0].astype(float).values
+    if len(value) > 0:
+        vals.append(float(value[0]))
+    if vals:
+        auroc_data.append(vals)
+
+
+label_to_data = dict(zip(ordered_names, auroc_data))
+sorted_auroc_data = [label_to_data[name] for name in ordered_names]
+
+# Collect AUPRC data
+auprc_data = []
+for raw in name_map.keys():
+    if raw not in ordered_keys:  # Skip backwardKL and js_pearson
+        continue
+    vals = []
+    # Add values from df1 (diffmap, paga, pca, phate)
+    for method in pseudotime_methods:
+        value = df1[(df1['Divergence'] == raw) & (df1['Pseudotime'] == method)]['AUPRC'].values
+        if len(value) > 0:
+            vals.append(float(value[0]))
+    # Add value from df2 (slingshot)
+    value = df2[df2['Divergence'] == raw]['AUPRC (Mean ± SD)'].str.split(' ± ').str[0].astype(float).values
+    if len(value) > 0:
+        vals.append(float(value[0]))
+    if vals:
+        auprc_data.append(vals)
+
+# Ensure order is correct
+label_to_data = dict(zip(ordered_names, auprc_data))
+sorted_auprc_data = [label_to_data[name] for name in ordered_names]
+
+# Plot AUROC
+fig1, ax1 = plt.subplots(figsize=(12, 8))
+bp1 = ax1.boxplot(sorted_auroc_data, patch_artist=True, labels=short_names)
+for patch in bp1['boxes']:
+    patch.set_facecolor('white')  # Remove color inside boxes
+for whisker in bp1['whiskers']:
+    whisker.set(color='black', linewidth=1.5)
+for cap in bp1['caps']:
+    cap.set(color='black', linewidth=2)
+for median in bp1['medians']:
+    median.set(color='black', linewidth=3)
+for flier in bp1['fliers']:
+    flier.set(marker='D', color='#e7298a', alpha=0.5)
+
+# Overlay mean values for AUROC
+for i, data in enumerate(sorted_auroc_data):
+    mean_val = np.mean(data)
+    ax1.plot(i + 1, mean_val, 'rD', markersize=6)
+
+# Style and font sizes for AUROC
+ax1.set_ylabel('AUROC', fontsize=27, fontweight='bold')
+plt.xticks(fontsize=27)
+ax1.tick_params(axis='y', labelsize=27)
+plt.xticks(rotation=45)
+plt.tight_layout()
+
+# Save AUROC plot
+plt.savefig("AUROC_Boxplot_Pseudotime_lambda1.5.pdf", format='pdf')
+plt.close()  # Close the figure to avoid overlap
+
+# Plot AUPRC
+fig2, ax2 = plt.subplots(figsize=(12, 8))
+bp2 = ax2.boxplot(sorted_auprc_data, patch_artist=True, labels=short_names)
+for patch in bp2['boxes']:
+    patch.set_facecolor('white')  # Remove color inside boxes
+for whisker in bp2['whiskers']:
+    whisker.set(color='black', linewidth=1.5)
+for cap in bp2['caps']:
+    cap.set(color='black', linewidth=2)
+for median in bp2['medians']:
+    median.set(color='black', linewidth=3)
+for flier in bp2['fliers']:
+    flier.set(marker='D', color='#e7298a', alpha=0.5)
+
+# Overlay mean values for AUPRC
+for i, data in enumerate(sorted_auprc_data):
+    mean_val = np.mean(data)
+    ax2.plot(i + 1, mean_val, 'rD', markersize=6)
+
+# Style and font sizes for AUPRC
+ax2.set_ylabel('AUPRC', fontsize=27, fontweight='bold')
+plt.xticks(fontsize=27)
+ax2.tick_params(axis='y', labelsize=27)
+plt.xticks(rotation=45)
+plt.tight_layout()
+
+# Save AUPRC plot
+plt.savefig("AUPRC_Boxplot_Pseudotime_lambda1.5.pdf", format='pdf')
+plt.close()  # Close the figure
