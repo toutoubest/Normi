@@ -95,8 +95,9 @@ print("Saved: paga_pseudotime.csv")
 
 
 
-#######################3
-# 5 runs to use 4 pseudotie methods with 3 divergence based score:forward KL, symmetric KL, JS
+####################### We didn't use the example code below in the paper ,since it is no lambda version score
+# if you need lambda version score, you can refer the slingshot example code.
+###### 5 runs to use 4 pseudotie methods with 3 divergence based score:forward KL, symmetric KL, JS
 import pandas as pd
 import numpy as np
 import os
