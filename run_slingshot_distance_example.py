@@ -156,7 +156,12 @@ def save_results_wide_format_fixed(df_summary, output_dir):
     df_out.to_csv(output_path, index=False)
     print(f"Saved corrected wide format to:\n{output_path}")
     return df_out
-
+'''
+#another version to save the summary csv:
+df_summary = pd.DataFrame(summary_all)
+summary_path = os.path.join(output_dir, "summary_divergence_results.csv")
+df_summary.to_csv(summary_path, index=False)
+'''
 
 ################# we can use cross validation to find the best lambda for the auc of using cramer and plot the curve:
 
