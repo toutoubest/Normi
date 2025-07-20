@@ -72,7 +72,7 @@ def MRMR2(data, n_jobs=1, lambda_val=1.0):
 
 
 import pandas as pd
-import numpy as n
+import numpy as np
 
 def MRMR2_divergence(df_mi, n_jobs=1, lambda_val=1.0):
     """
