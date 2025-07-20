@@ -198,37 +198,7 @@ def compute_optimal_lag(x, y, max_lag=None):
     # find lag with max distance correlation
     optimal_lag = np.argmax(dcorrs)
     return optimal_lag
-'''
-def cal_mi_divergence(i, j, x, y):
-    """
-    For gene pair (i,j), compute MI after aligning with optimal lag.
-    x, y are divergence profiles.
-    """
-    # 1️ Find optimal lag
-    #opt_lag = compute_optimal_lag(x, y)
-    opt_lag = 1  # fixed time lag = 1
 
-    # 2️ Align time series
-    if opt_lag == 0:
-        x_aligned = x
-        y_aligned = y
-    else:
-        x_aligned = x[:-opt_lag]
-        y_aligned = y[opt_lag:]
-    
-    # 3 Reshape for MI_Gao
-    if x_aligned.ndim == 1:
-        x_aligned = x_aligned.reshape((-1, 1))
-    if y_aligned.ndim == 1:
-        y_aligned = y_aligned.reshape((-1, 1))
-    
-    # 4️ Compute MI
-    #mi = max(MI_Gao(x_aligned, y_aligned), 0)
-    
-    #return {'Gene1': i, 'Gene2': j, 'score': mi}
-    d = dcor.distance_correlation(x_aligned, y_aligned)
-    return {'Gene1': i, 'Gene2': j, 'score': d}
-'''
 ########################################### 
 # forward KL based score
 def kl_divergence(p, q):
